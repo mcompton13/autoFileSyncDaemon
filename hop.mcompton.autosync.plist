@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC -//Apple Computer//DTD PLIST 1.0//EN http://www.apple.com/DTDs/PropertyList-1.0.dtd >
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>hop.mcompton.autosync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.py</string>
+    </array>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/source</string>
+    </array>
+
+<!--
+    <key>StandardOutPath</key>
+    <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
+
+    <key>Debug</key>
+    <true/>
+-->
+
+  </dict>
+</plist>
