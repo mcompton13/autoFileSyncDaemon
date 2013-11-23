@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import argparse
 from os import kill, linesep, listdir, makedirs, path, rename, rmdir, walk
 from tempfile import mkdtemp, NamedTemporaryFile
 from time import sleep
@@ -12,12 +13,46 @@ DEFAULT_JOURNAL_FILENAME = '.journal'
 DEFAULT_LOCK_FILENAME = '.lock'
 HIDDEN_FILE_PREFIX = '.'
 
+DEFAULT_DIR_LOCK_WAIT = 10
+
 is_include_hidden_files = False
 is_verbose = False
 
+parser = argparse.ArgumentParser(
+    description='A utility copy or move files from a source directory to the specified destination directory')
 
-# Things to do
+mv_cp_group = parser.add_mutually_exclusive_group()
+
+mv_cp_group.add_argument('-c', '--copy', action='store_true',
+    help='Specifies that files should be copied instead of moved, the default behavior')
+parser.add_argument('-E', '--include-extensions', metavar='EXT1,EXT2,...',
+    help='If specified, sync only files with extensions in the given comma-separated list, otherwise sync ALL files')
+parser.add_argument('-H', '--include-hidden-paths', action='store_true',
+    help='If specified, includes files and directories that begin with \'%s\', otherwise they are excluded' % HIDDEN_FILE_PREFIX)
+parser.add_argument('-l', '--lock-source-dir', action='store_true',
+    help='Check for and create a .lock file in <source-dir>')
+parser.add_argument('-L', '--lock-destination-dir', action='store_true',
+    help='Check for and create a .lock file in <destination-dir>')
+mv_cp_group.add_argument('-m', '--move', action='store_true',
+    help='Specifies that files should be moved instead of copied, the default is to copy')
+parser.add_argument('-p', '--purge-empty-destination-dirs', action='store_true',
+    help='If specified, empty directories in <destination-dir> will be deleted')
+parser.add_argument('-t', '--lock-dir-timeout', type=int, default=DEFAULT_DIR_LOCK_WAIT, metavar='SECS',
+    help='Specify the number of seconds to wait if the dir is already locked, defaults to %d' % DEFAULT_DIR_LOCK_WAIT)
+parser.add_argument('-v', '--verbose', action='store_true',
+    help='Print additional debugging messages')
+parser.add_argument('-w', '--workspace-dir', metavar='DIR',
+    help='Specify a workspace dir, defaults to <destination-dir>/%s' % DEFAULT_WORKSPACE_DIRNAME)
+
+parser.add_argument('source-dir', help='Dir to sync files from, must exist')
+parser.add_argument('destination-dir', help='Dir to sync files to, will be created if does not exist')
+
+
+# Things TODO:
 #   * Add command line arg parsing
+#   * Test restrict to extensions
+#   * Copy file and clean up workspace from previous execution
+#   * change error() to print to stderr
 #   * Need to add a signal handler for SIGINT
 #   * Add access/modify time thresholds when copying, moving, or removing
 
@@ -173,16 +208,11 @@ def recursive_remove_empty_directories(root_dir_path, dir_path):
             error('Failed to remove dir=' + root + ', ' + str(ex))
 
 
-def get_last_file_list(journal_file_path, workspace_journal_file_path):
+def get_last_file_list(journal_file_path):
     results = []
 
     if path.exists(journal_file_path):
         with open(journal_file_path, 'r') as journal_file:
-            for relative_filename in journal_file:
-                results.append(relative_filename.rstrip(os.linesep))
-
-    if path.exists(workspace_journal_file_path):
-        with open(workspace_journal_file_path, 'r') as journal_file:
             for relative_filename in journal_file:
                 results.append(relative_filename.rstrip(os.linesep))
 
@@ -210,7 +240,7 @@ def update_journal(journal_file_path, journal_entries):
 def main(argv):
     # 1. Parse command line args
 
-    # TODO
+    parser.parse_args()
 
 
     # 2. Setup all the required variables
@@ -220,7 +250,6 @@ def main(argv):
     lock_dir_timeout = 2
     workspace_dir_path = None
     restrict_to_file_extensions = []
-    journal_filename = None
     is_move_file = False
     is_purge_empty_destination_dirs = True
     global is_include_hidden_files
@@ -234,11 +263,7 @@ def main(argv):
     if workspace_dir_path == None:
         workspace_dir_path = path.join(destination_dir_path, DEFAULT_WORKSPACE_DIRNAME)
 
-    if journal_filename == None:
-        journal_filename = DEFAULT_JOURNAL_FILENAME
-
-    journal_file_path = path.join(destination_dir_path, journal_filename)
-    workspace_journal_file_path = path.join(workspace_dir_path, journal_filename)
+    workspace_journal_file_path = path.join(workspace_dir_path, DEFAULT_JOURNAL_FILENAME)
 
 
     # 3. Validate the source and destination directories
@@ -272,7 +297,7 @@ def main(argv):
             source_files = get_file_list(source_dir_path, restrict_to_file_extensions)
             debug('Source files:' + str(source_files))
 
-            previous_files = get_last_file_list(journal_file_path, workspace_journal_file_path)
+            previous_files = get_last_file_list(journal_file_path)
             previous_files += get_file_list(destination_dir_path, restrict_to_file_extensions)
             debug('Previous files:' + str(previous_files))
 
@@ -293,7 +318,7 @@ def main(argv):
                     raise
                 else:
                     synced_files.append(new_relative_filename)
-                    update_journal(workspace_journal_file_path, synced_files)
+                    update_journal(journal_file_path, synced_files)
 
 
             #7. Purge empty directories from destination
