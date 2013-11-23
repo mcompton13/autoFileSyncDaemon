@@ -8,6 +8,15 @@ from shutil import copy2, move
 import sys
 
 
+# Things TODO:
+#   * Add command line arg parsing
+#   * Test restrict to extensions
+#   * Copy file and clean up workspace from previous execution
+#   * change error() to print to stderr
+#   * Need to add a signal handler for SIGINT
+#   * Add access/modify time thresholds when copying, moving, or removing
+
+
 DEFAULT_WORKSPACE_DIRNAME = '.workspace'
 DEFAULT_JOURNAL_FILENAME = '.journal'
 DEFAULT_LOCK_FILENAME = '.lock'
@@ -15,7 +24,7 @@ HIDDEN_FILE_PREFIX = '.'
 
 DEFAULT_DIR_LOCK_WAIT = 10
 
-is_include_hidden_files = False
+is_include_hidden_paths = False
 is_verbose = False
 
 parser = argparse.ArgumentParser(
@@ -44,17 +53,9 @@ parser.add_argument('-v', '--verbose', action='store_true',
 parser.add_argument('-w', '--workspace-dir', metavar='DIR',
     help='Specify a workspace dir, defaults to <destination-dir>/%s' % DEFAULT_WORKSPACE_DIRNAME)
 
-parser.add_argument('source-dir', help='Dir to sync files from, must exist')
-parser.add_argument('destination-dir', help='Dir to sync files to, will be created if does not exist')
+parser.add_argument('source_dir', help='Dir to sync files from, must exist')
+parser.add_argument('destination_dir', help='Dir to sync files to, will be created if does not exist')
 
-
-# Things TODO:
-#   * Add command line arg parsing
-#   * Test restrict to extensions
-#   * Copy file and clean up workspace from previous execution
-#   * change error() to print to stderr
-#   * Need to add a signal handler for SIGINT
-#   * Add access/modify time thresholds when copying, moving, or removing
 
 def debug(message):
     if is_verbose:
@@ -155,14 +156,14 @@ def get_file_list(source_path, restrict_to_file_extensions):
         return results
 
     for root, dirs, files in walk(source_path):
-        if not is_include_hidden_files:
+        if not is_include_hidden_paths:
             for dirname in dirs:
                 if dirname[0] == HIDDEN_FILE_PREFIX:
                     dirs.remove(dirname)
 
 
         for filename in files:
-            if ( (not is_include_hidden_files and filename[0] == HIDDEN_FILE_PREFIX) or
+            if ( (not is_include_hidden_paths and filename[0] == HIDDEN_FILE_PREFIX) or
                     filename == DEFAULT_LOCK_FILENAME ):
                 continue
 
@@ -240,43 +241,46 @@ def update_journal(journal_file_path, journal_entries):
 def main(argv):
     # 1. Parse command line args
 
-    parser.parse_args()
-
+    args = parser.parse_args(argv[1:])
 
     # 2. Setup all the required variables
 
-    is_lock_source_dir = False
-    is_lock_destination_dir = True
+    is_lock_source_dir = args.lock_source_dir
+    is_lock_destination_dir = args.lock_destination_dir
     lock_dir_timeout = 2
-    workspace_dir_path = None
-    restrict_to_file_extensions = []
-    is_move_file = False
-    is_purge_empty_destination_dirs = True
-    global is_include_hidden_files
-    is_include_hidden_files = False
+    workspace_dir_path = args.workspace_dir
+    restrict_to_file_extensions = args.include_extensions.split(',') if args.include_extensions else []
+    is_move_file = args.move
+    is_purge_empty_destination_dirs = args.purge_empty_destination_dirs
+    global is_include_hidden_paths
+    is_include_hidden_paths = args.include_hidden_paths
     global is_verbose
-    is_verbose = True
-    source_dir_path = '/Users/mcompton/src/autoFileSyncDaemon.git/test/source'
-    destination_dir_path = '/Users/mcompton/src/autoFileSyncDaemon.git/test/destination'
+    is_verbose = args.verbose
+    source_dir_path = args.destination_dir
+    destination_dir_path = args.source_dir
+    # source_dir_path = '/Users/mcompton/src/autoFileSyncDaemon.git/test/source'
+    # destination_dir_path = '/Users/mcompton/src/autoFileSyncDaemon.git/test/destination'
+
+    debug('args=%s' % args)
 
 
     if workspace_dir_path == None:
         workspace_dir_path = path.join(destination_dir_path, DEFAULT_WORKSPACE_DIRNAME)
 
-    workspace_journal_file_path = path.join(workspace_dir_path, DEFAULT_JOURNAL_FILENAME)
+    journal_file_path = path.join(workspace_dir_path, DEFAULT_JOURNAL_FILENAME)
 
 
     # 3. Validate the source and destination directories
 
     if not path.isdir(source_dir_path):
-        error('Failed to sync, invalid source directory=%s' % source_dir_path)
+        error('Failed to sync, invalid source_directory=%s' % source_dir_path)
         return
 
     if not path.exists(destination_dir_path):
-        debug('Creating destination directory=%s' % destination_dir_path)
+        debug('Creating destination_directory=%s' % destination_dir_path)
         makedirs(destination_dir_path)
     elif not path.isdir(destination_dir_path):
-        error('Failed to sync, invalid  destination directory=%s' % destination_dir_path)
+        error('Failed to sync, invalid destination_directory=%s' % destination_dir_path)
         return
 
 
