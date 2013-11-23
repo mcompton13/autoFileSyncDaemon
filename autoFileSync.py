@@ -9,11 +9,9 @@ import sys
 
 
 # Things TODO:
-#   * Add command line arg parsing
-#   * Test restrict to extensions
-#   * Copy file and clean up workspace from previous execution
 #   * change error() to print to stderr
 #   * Need to add a signal handler for SIGINT
+#   * Use sets instead of lists for files to copy since files should be unique
 #   * Add access/modify time thresholds when copying, moving, or removing
 
 
@@ -24,7 +22,6 @@ HIDDEN_FILE_PREFIX = '.'
 
 DEFAULT_DIR_LOCK_WAIT = 10
 
-is_include_hidden_paths = False
 is_verbose = False
 
 parser = argparse.ArgumentParser(
@@ -97,7 +94,8 @@ def safe_move_with_workspace(source_file_path, workspace_dir_path, destination_d
 
 
     # 2. Move file to workspace destination
-    move(source_file_path, workspace_file_path)
+    if source_file_path is not workspace_file_path:
+        move(source_file_path, workspace_file_path)
 
 
     # 3. Calculate which destination dirs don't exists and move from workspace
@@ -149,7 +147,7 @@ def get_empty_directory_list(dir_path):
     return results;
 
 
-def get_file_list(source_path, restrict_to_file_extensions):
+def get_file_list(source_path, restrict_to_file_extensions, is_include_hidden_paths):
     results = []
 
     if not source_path or not path.exists(source_path):
@@ -252,16 +250,26 @@ def main(argv):
     restrict_to_file_extensions = args.include_extensions.split(',') if args.include_extensions else []
     is_move_file = args.move
     is_purge_empty_destination_dirs = args.purge_empty_destination_dirs
-    global is_include_hidden_paths
     is_include_hidden_paths = args.include_hidden_paths
     global is_verbose
     is_verbose = args.verbose
-    source_dir_path = args.destination_dir
-    destination_dir_path = args.source_dir
-    # source_dir_path = '/Users/mcompton/src/autoFileSyncDaemon.git/test/source'
-    # destination_dir_path = '/Users/mcompton/src/autoFileSyncDaemon.git/test/destination'
+    source_dir_path = args.source_dir
+    destination_dir_path = args.destination_dir
+
+    if restrict_to_file_extensions:
+        cleaned_extensions = []
+        for ext in restrict_to_file_extensions:
+            if ext and ext.strip() and ext.strip()[1] is not '.':
+                cleaned_extensions.append('.' + ext.strip())
+            else:
+                cleaned_extensions.append(ext.strip())
+
+        restrict_to_file_extensions = cleaned_extensions
+
 
     debug('args=%s' % args)
+    if restrict_to_file_extensions:
+        debug('Only copying files with the following extensions: %s' % restrict_to_file_extensions)
 
 
     if workspace_dir_path == None:
@@ -289,26 +297,40 @@ def main(argv):
     with ConditionalDirLock(source_dir_path, is_lock_source_dir, lock_dir_timeout):
         with ConditionalDirLock(destination_dir_path, is_lock_destination_dir, lock_dir_timeout):
 
+            # 5. See if there was a previous work from another failed sync left
+            #    in the workspace directory, and clean it up
+            workspace_files = get_file_list(workspace_dir_path, [], False)
 
-            # 5. Check if need to cleanup previously created destination dirs
+            debug('Workspace files to cleanup: %s' % workspace_files)
+
+            for workspace_relative_filename in workspace_files:
+                try:
+                    workspace_file_path = path.join(workspace_dir_path, workspace_relative_filename)
+                    safe_move_with_workspace(workspace_file_path, workspace_dir_path, destination_dir_path, workspace_relative_filename)
+                except Exception as e:
+                    error('Error syncing previous workspace file: %s, %s' % (workspace_file_path, e))
+                    raise
+
+
+            # 6. Check if need to cleanup previously created destination dirs
 
             if is_purge_empty_destination_dirs:
                 empty_dir_list = get_empty_directory_list(destination_dir_path)
 
 
-            # 6. Move or copy new files in source to workspace
+            # 7. Move or copy new files in source to workspace
 
-            source_files = get_file_list(source_dir_path, restrict_to_file_extensions)
-            debug('Source files:' + str(source_files))
+            source_files = get_file_list(source_dir_path, restrict_to_file_extensions, is_include_hidden_paths)
+            debug('Source files: %s' % source_files)
 
             previous_files = get_last_file_list(journal_file_path)
-            previous_files += get_file_list(destination_dir_path, restrict_to_file_extensions)
-            debug('Previous files:' + str(previous_files))
+            previous_files += get_file_list(destination_dir_path, restrict_to_file_extensions, is_include_hidden_paths)
+            debug('Previous files: %s' % previous_files)
 
             new_source_files = get_new_file_list(source_files, previous_files)
             synced_files = get_already_synced_file_list(source_files, previous_files)
 
-            debug('Copying files:' + str(new_source_files))
+            debug('Copying files: %s' % new_source_files)
 
             for new_relative_filename in new_source_files:
                 try:
@@ -319,13 +341,12 @@ def main(argv):
                 except Exception as e:
                     error('Error syncing file:' + str(path.join(source_dir_path, new_relative_filename)) +
                         ", " + str(e))
-                    raise
                 else:
                     synced_files.append(new_relative_filename)
                     update_journal(journal_file_path, synced_files)
 
 
-            #7. Purge empty directories from destination
+            #8. Purge empty directories from destination
 
             if is_purge_empty_destination_dirs:
                 debug('Directories to purge:' + str(empty_dir_list))
@@ -343,8 +364,10 @@ def main(argv):
                 #         recursive_remove_empty_directories(dir1, dir2)
 
 
-
+################################################################################
 # Code copied from https://github.com/raphendyr/FileLock/tree/master/filelock
+################################################################################
+
 
 # Copyright (c) 2009, Evan Fosmark
 # All rights reserved.
@@ -454,6 +477,11 @@ class FileLock(object):
             lying around.
         """
         self.release()
+
+
+################################################################################
+# END copied code
+################################################################################
 
 
 # My subclass
