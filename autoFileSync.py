@@ -9,7 +9,6 @@ import sys
 
 
 # Things TODO:
-#   * change error() to print to stderr
 #   * Need to add a signal handler for SIGINT
 #   * Use sets instead of lists for files to copy since files should be unique
 #   * Add access/modify time thresholds when copying, moving, or removing
@@ -60,7 +59,7 @@ def debug(message):
 
 
 def error(message):
-    print message
+    sys.stderr.write(message + '\n')
 
 
 def copy_file(workspace_dir_path, source_dir_path, destination_dir_path, relative_file_path):
