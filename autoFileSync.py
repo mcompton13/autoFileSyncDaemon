@@ -5,11 +5,11 @@ from os import kill, linesep, listdir, makedirs, path, rename, rmdir, walk
 from tempfile import mkdtemp, NamedTemporaryFile
 from time import sleep
 from shutil import copy2, move
+import signal
 import sys
 
 
 # Things TODO:
-#   * Need to add a signal handler for SIGINT
 #   * Use sets instead of lists for files to copy since files should be unique
 #   * Add access/modify time thresholds when copying, moving, or removing
 
@@ -19,9 +19,20 @@ DEFAULT_JOURNAL_FILENAME = '.journal'
 DEFAULT_LOCK_FILENAME = '.lock'
 HIDDEN_FILE_PREFIX = '.'
 
-DEFAULT_DIR_LOCK_WAIT = 10
+DEFAULT_DIR_LOCK_WAIT_SECS = 10
+DEFAULT_SYNC_COUNT = 1
+DEFAULT_SYNC_INTERVAL_SECS = 5
 
 is_verbose = False
+is_terminate_now = False
+
+
+def check_negative(value):
+    ivalue = int(value)
+    if ivalue < 0:
+         raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
+    return ivalue
+
 
 parser = argparse.ArgumentParser(
     description='A utility copy or move files from a source directory to the specified destination directory')
@@ -30,10 +41,14 @@ mv_cp_group = parser.add_mutually_exclusive_group()
 
 mv_cp_group.add_argument('-c', '--copy', action='store_true',
     help='Specifies that files should be copied instead of moved, the default behavior')
+parser.add_argument('-C', '--sync-count', type=check_negative, default=DEFAULT_SYNC_COUNT, metavar='COUNT',
+    help='Specifies how many times to sync before exiting, zero means keep running until killed, defaults to %d' % DEFAULT_SYNC_COUNT)
 parser.add_argument('-E', '--include-extensions', metavar='EXT1,EXT2,...',
     help='If specified, sync only files with extensions in the given comma-separated list, otherwise sync ALL files')
 parser.add_argument('-H', '--include-hidden-paths', action='store_true',
     help='If specified, includes files and directories that begin with \'%s\', otherwise they are excluded' % HIDDEN_FILE_PREFIX)
+parser.add_argument('-i', '--sync-interval', type=check_negative, default=DEFAULT_SYNC_INTERVAL_SECS, metavar='SECS',
+    help='Specifies the number of seconds between syncs, only used when sync-count is NOT 1 and defaults to %d' % DEFAULT_SYNC_INTERVAL_SECS)
 parser.add_argument('-l', '--lock-source-dir', action='store_true',
     help='Check for and create a .lock file in <source-dir>')
 parser.add_argument('-L', '--lock-destination-dir', action='store_true',
@@ -42,8 +57,8 @@ mv_cp_group.add_argument('-m', '--move', action='store_true',
     help='Specifies that files should be moved instead of copied, the default is to copy')
 parser.add_argument('-p', '--purge-empty-destination-dirs', action='store_true',
     help='If specified, empty directories in <destination-dir> will be deleted')
-parser.add_argument('-t', '--lock-dir-timeout', type=int, default=DEFAULT_DIR_LOCK_WAIT, metavar='SECS',
-    help='Specify the number of seconds to wait if the dir is already locked, defaults to %d' % DEFAULT_DIR_LOCK_WAIT)
+parser.add_argument('-t', '--lock-dir-timeout', type=check_negative, default=DEFAULT_DIR_LOCK_WAIT_SECS, metavar='SECS',
+    help='Specify the number of seconds to wait if the dir is already locked, defaults to %d' % DEFAULT_DIR_LOCK_WAIT_SECS)
 parser.add_argument('-v', '--verbose', action='store_true',
     help='Print additional debugging messages')
 parser.add_argument('-w', '--workspace-dir', metavar='DIR',
@@ -65,7 +80,7 @@ def error(message):
 def copy_file(workspace_dir_path, source_dir_path, destination_dir_path, relative_file_path):
     source_file_path = path.join(source_dir_path, relative_file_path)
 
-    # 1. Copy to tmp location
+    # Copy to tmp location
     tmpdir = mkdtemp()
     tmp_file_path = path.join(tmpdir, path.basename(relative_file_path))
 
@@ -234,13 +249,17 @@ def update_journal(journal_file_path, journal_entries):
     except OSError:
         error('Failed to move updated journal to ' + journal_file_path)
 
+def signal_handler(signal, frame):
+    global is_terminate_now
+    is_terminate_now = True
 
-def main(argv):
-    # 1. Parse command line args
 
-    args = parser.parse_args(argv[1:])
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
-    # 2. Setup all the required variables
+
+def sync_files(args):
+    # 1. Setup all the required variables
 
     is_lock_source_dir = args.lock_source_dir
     is_lock_destination_dir = args.lock_destination_dir
@@ -250,8 +269,6 @@ def main(argv):
     is_move_file = args.move
     is_purge_empty_destination_dirs = args.purge_empty_destination_dirs
     is_include_hidden_paths = args.include_hidden_paths
-    global is_verbose
-    is_verbose = args.verbose
     source_dir_path = args.source_dir
     destination_dir_path = args.destination_dir
 
@@ -266,7 +283,6 @@ def main(argv):
         restrict_to_file_extensions = cleaned_extensions
 
 
-    debug('args=%s' % args)
     if restrict_to_file_extensions:
         debug('Only copying files with the following extensions: %s' % restrict_to_file_extensions)
 
@@ -277,7 +293,7 @@ def main(argv):
     journal_file_path = path.join(workspace_dir_path, DEFAULT_JOURNAL_FILENAME)
 
 
-    # 3. Validate the source and destination directories
+    # 2. Validate the source and destination directories
 
     if not path.isdir(source_dir_path):
         error('Failed to sync, invalid source_directory=%s' % source_dir_path)
@@ -291,76 +307,107 @@ def main(argv):
         return
 
 
-    # 4. Before doing work, lock the directories
-
-    with ConditionalDirLock(source_dir_path, is_lock_source_dir, lock_dir_timeout):
-        with ConditionalDirLock(destination_dir_path, is_lock_destination_dir, lock_dir_timeout):
-
-            # 5. See if there was a previous work from another failed sync left
-            #    in the workspace directory, and clean it up
-            workspace_files = get_file_list(workspace_dir_path, [], False)
-
-            debug('Workspace files to cleanup: %s' % workspace_files)
-
-            for workspace_relative_filename in workspace_files:
-                try:
-                    workspace_file_path = path.join(workspace_dir_path, workspace_relative_filename)
-                    safe_move_with_workspace(workspace_file_path, workspace_dir_path, destination_dir_path, workspace_relative_filename)
-                except Exception as e:
-                    error('Error syncing previous workspace file: %s, %s' % (workspace_file_path, e))
-                    raise
+    if is_terminate_now:
+        return
 
 
-            # 6. Check if need to cleanup previously created destination dirs
+    # 3. Before doing work, lock the directories
 
-            if is_purge_empty_destination_dirs:
-                empty_dir_list = get_empty_directory_list(destination_dir_path)
+    with ( ConditionalDirLock(source_dir_path, is_lock_source_dir, lock_dir_timeout) and
+            ConditionalDirLock(destination_dir_path, is_lock_destination_dir, lock_dir_timeout) ):
+
+        # 4. See if there was a previous work from another failed sync left
+        #    in the workspace directory, and clean it up
+        workspace_files = get_file_list(workspace_dir_path, [], False)
+
+        debug('Workspace files to cleanup: %s' % workspace_files)
+
+        for workspace_relative_filename in workspace_files:
+            if is_terminate_now:
+                return
+
+            try:
+                workspace_file_path = path.join(workspace_dir_path, workspace_relative_filename)
+                safe_move_with_workspace(workspace_file_path, workspace_dir_path, destination_dir_path, workspace_relative_filename)
+            except Exception as e:
+                error('Error syncing previous workspace file: %s, %s' % (workspace_file_path, e))
+                raise
 
 
-            # 7. Move or copy new files in source to workspace
+        # 5. Check if need to cleanup previously created destination dirs
 
-            source_files = get_file_list(source_dir_path, restrict_to_file_extensions, is_include_hidden_paths)
-            debug('Source files: %s' % source_files)
+        if is_purge_empty_destination_dirs:
+            empty_dir_list = get_empty_directory_list(destination_dir_path)
 
-            previous_files = get_last_file_list(journal_file_path)
-            previous_files += get_file_list(destination_dir_path, restrict_to_file_extensions, is_include_hidden_paths)
-            debug('Previous files: %s' % previous_files)
 
-            new_source_files = get_new_file_list(source_files, previous_files)
-            synced_files = get_already_synced_file_list(source_files, previous_files)
+        # 6. Move or copy new files in source to workspace
 
-            debug('Copying files: %s' % new_source_files)
+        source_files = get_file_list(source_dir_path, restrict_to_file_extensions, is_include_hidden_paths)
+        debug('Source files: %s' % source_files)
 
-            for new_relative_filename in new_source_files:
-                try:
-                    if is_move_file:
-                        move_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename)
-                    else:
-                        copy_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename)
-                except Exception as e:
-                    error('Error syncing file:' + str(path.join(source_dir_path, new_relative_filename)) +
-                        ", " + str(e))
+        previous_files = get_last_file_list(journal_file_path)
+        previous_files += get_file_list(destination_dir_path, restrict_to_file_extensions, is_include_hidden_paths)
+        debug('Previous files: %s' % previous_files)
+
+        new_source_files = get_new_file_list(source_files, previous_files)
+        synced_files = get_already_synced_file_list(source_files, previous_files)
+
+        debug('Copying files: %s' % new_source_files)
+
+        for new_relative_filename in new_source_files:
+            if is_terminate_now:
+                return
+
+            try:
+                if is_move_file:
+                    move_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename)
                 else:
-                    synced_files.append(new_relative_filename)
-                    update_journal(journal_file_path, synced_files)
+                    copy_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename)
+            except Exception as e:
+                error('Error syncing file:' + str(path.join(source_dir_path, new_relative_filename)) +
+                    ", " + str(e))
+            else:
+                synced_files.append(new_relative_filename)
+                update_journal(journal_file_path, synced_files)
 
 
-            #8. Purge empty directories from destination
+        # 7. Purge empty directories from destination
 
-            if is_purge_empty_destination_dirs:
-                debug('Directories to purge:' + str(empty_dir_list))
+        if is_purge_empty_destination_dirs:
+            debug('Directories to purge:' + str(empty_dir_list))
 
-                for dir_path in empty_dir_list:
-                    recursive_remove_empty_directories(destination_dir_path, dir_path)
+            for dir_path in empty_dir_list:
+                if is_terminate_now:
+                    return
 
-                # TODO: Remove Testing code
-                # list1 = [ '/', '/a', '/b', '/Users/mcompton/src/autoFileSyncDaemon.git', '/Users/mcompton/src/autoFileSyncDaemon.git/test/source', '/Users/mcompton/src/autoFileSyncDaemon.git/test/source/test1', '/Users/mcompton/src/autoFileSyncDaemon.git/test/source/test3' ]
-                # list2 = [ '/', '/a', '/b', '/Users/mcompton/src/autoFileSyncDaemon.git', '/Users/mcompton/src/autoFileSyncDaemon.git/test/source', '/Users/mcompton/src/autoFileSyncDaemon.git/test/source/test1', '/Users/mcompton/src/autoFileSyncDaemon.git/test/source/test3' ]
+                recursive_remove_empty_directories(destination_dir_path, dir_path)
 
-                # for dir1 in list1:
-                #     for dir2 in list2:
-                #         debug('Testing dir1=' + dir1 + ' dir2=' + dir2)
-                #         recursive_remove_empty_directories(dir1, dir2)
+
+def main(argv):
+    print 'argv=%s' % argv
+
+    # Parse command line args
+    args = parser.parse_args(argv[1:])
+
+    global is_verbose
+    is_verbose = args.verbose
+
+    debug('args=%s' % args)
+
+    # sync_interval_secs = args.sync_interval
+    # sync_count = args.sync_count
+    sync_interval_secs = args.sync_interval
+    sync_count = args.sync_count
+
+    while sync_count and not is_terminate_now:
+        print 'is_terminate_now=%s' % is_terminate_now
+        sync_files(args)
+
+        sync_count -= 1
+
+        if sync_count and not is_terminate_now:
+            debug('Sleeping for %ds' % sync_interval_secs)
+            sleep(sync_interval_secs)
 
 
 ################################################################################
