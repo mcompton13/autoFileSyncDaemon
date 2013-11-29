@@ -2,31 +2,41 @@
 <!DOCTYPE plist PUBLIC -//Apple Computer//DTD PLIST 1.0//EN http://www.apple.com/DTDs/PropertyList-1.0.dtd >
 <plist version="1.0">
   <dict>
-    <key>Label</key>
-    <string>hop.mcompton.autosync</string>
+  <key>Label</key>
+  <string>hop.mcompton.autosync</string>
 
-    <key>ProgramArguments</key>
-    <array>
-      <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.py</string>
-    </array>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.py</string>
+    <string>--copy</string>
+    <string>--sync-count</string><string>5</string>
+    <string>--include-extensions</string><string>png</string>
+    <string>--sync-interval</string><string>5</string>
+    <string>--lock-source-dir</string>
+    <string>--lock-destination-dir</string>
+    <string>--purge-empty-destination-dirs</string>
+    <string>--verbose</string>
+    <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/source</string>
+    <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/destination</string>
+  </array>
 
-    <key>ProcessType</key>
-    <string>Background</string>
+  <key>ProcessType</key>
+  <string>Background</string>
 
-    <key>WatchPaths</key>
-    <array>
-        <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/source</string>
-    </array>
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/source</string>
+  </array>
 
 <!--
-    <key>StandardOutPath</key>
-    <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
+  <key>StandardOutPath</key>
+  <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
 
-    <key>StandardErrorPath</key>
-    <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
 
-    <key>Debug</key>
-    <true/>
+  <key>Debug</key>
+  <true/>
 -->
 
   </dict>
