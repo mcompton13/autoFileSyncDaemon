@@ -3,41 +3,45 @@
 <plist version="1.0">
   <dict>
   <key>Label</key>
-  <string>hop.mcompton.autosync</string>
+  <string>hop.mcompton.iphoto.import.autosync</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.py</string>
+    <string>/opt/bin/autoFileSync.py</string>
     <string>--copy</string>
-    <string>--sync-count</string><string>5</string>
-    <string>--include-extensions</string><string>png</string>
-    <string>--sync-interval</string><string>5</string>
-    <string>--lock-source-dir</string>
+    <string>--include-extensions</string><string>jpeg,jpg,png</string>
     <string>--lock-destination-dir</string>
     <string>--purge-empty-destination-dirs</string>
+    <string>--set-permissions</string><string>0666</string>
+    <string>--sync-count</string><string>5</string>
+    <string>--sync-interval</string><string>5</string>
+    <string>--workspace-dir</string><string>/Users/Shared/Pictures/fromAcompton/.acompton.workspace</string>
+
     <string>--verbose</string>
-    <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/source</string>
-    <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/destination</string>
+
+    <string>/Users/acompton/Library/Application Support/iLifeAssetManagement/assets/sub</string>
+    <string>/Users/Shared/Pictures/fromAcompton</string>
   </array>
 
   <key>ProcessType</key>
   <string>Background</string>
 
+  <key>Umask</key>
+  <integer>0</integer>
+
   <key>WatchPaths</key>
   <array>
-    <string>/Users/mcompton/src/autoFileSyncDaemon.git/test/source</string>
+    <string>/Users/acompton/Library/Application Support/iLifeAssetManagement/assets/sub</string>
   </array>
 
-<!--
   <key>StandardOutPath</key>
-  <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
+  <string>/opt/bin/log/acompton.export.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/mcompton/src/autoFileSyncDaemon.git/autoFileSync.log</string>
+  <string>/opt/bin/log/acompton.export.log</string>
 
   <key>Debug</key>
   <true/>
--->
 
   </dict>
 </plist>
