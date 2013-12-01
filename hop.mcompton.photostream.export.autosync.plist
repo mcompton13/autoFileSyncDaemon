@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC -//Apple Computer//DTD PLIST 1.0//EN http://www.apple.com/DTDs/PropertyList-1.0.dtd >
+<plist version="1.0">
+  <dict>
+  <key>Label</key>
+  <string>hop.mcompton.photostream.export.autosync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/bin/autoFileSync.py</string>
+    <string>--move</string>
+    <string>--include-extensions</string><string>jpeg,jpg,png</string>
+    <string>--lock-source-dir</string>
+    <string>--purge-empty-destination-dirs</string>
+    <string>--sync-count</string><string>5</string>
+    <string>--sync-interval</string><string>5</string>
+    <string>--workspace-dir</string><string>/Users/Shared/Pictures/fromAcompton/.mcompton.workspace</string>
+
+    <string>--verbose</string>
+
+    <string>/Users/Shared/Pictures/fromAcompton</string>
+    <string>/Users/mcompton/Pictures/iPhoto Library.photolibrary/Auto Import</string>
+  </array>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/Shared/Pictures/fromAcompton</string>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/opt/bin/log/mcompton.import.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/opt/bin/log/mcompton.import.log</string>
+
+  <key>Debug</key>
+  <true/>
+
+  </dict>
+</plist>
