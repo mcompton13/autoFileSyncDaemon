@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
-from os import kill, linesep, listdir, makedirs, path, rename, rmdir, walk
+from os import chmod, kill, linesep, listdir, makedirs, path, rename, rmdir, walk
 from tempfile import mkdtemp, NamedTemporaryFile
 from time import sleep
 from shutil import copy2, move
@@ -25,6 +25,13 @@ DEFAULT_SYNC_INTERVAL_SECS = 5
 
 is_verbose = False
 is_terminate_now = False
+
+
+def check_octal(value):
+    ivalue = int(value, 8)
+    if ivalue < 0:
+         raise argparse.ArgumentTypeError("%s is an invalid octal value" % value)
+    return ivalue
 
 
 def check_negative(value):
@@ -57,6 +64,8 @@ mv_cp_group.add_argument('-m', '--move', action='store_true',
     help='Specifies that files should be moved instead of copied, the default is to copy')
 parser.add_argument('-p', '--purge-empty-destination-dirs', action='store_true',
     help='If specified, empty directories in <destination-dir> will be deleted')
+parser.add_argument('-P', '--set-permissions', type=check_octal, metavar='OCTAL',
+    help='If specified, change the files to the specified permissions when synced to the destination')
 parser.add_argument('-t', '--lock-dir-timeout', type=check_negative, default=DEFAULT_DIR_LOCK_WAIT_SECS, metavar='SECS',
     help='Specify the number of seconds to wait if the dir is already locked, defaults to %d' % DEFAULT_DIR_LOCK_WAIT_SECS)
 parser.add_argument('-v', '--verbose', action='store_true',
@@ -77,7 +86,7 @@ def error(message):
     sys.stderr.write(message + '\n')
 
 
-def copy_file(workspace_dir_path, source_dir_path, destination_dir_path, relative_file_path):
+def copy_file(workspace_dir_path, source_dir_path, destination_dir_path, relative_file_path, file_permissions):
     source_file_path = path.join(source_dir_path, relative_file_path)
 
     # Copy to tmp location
@@ -88,23 +97,23 @@ def copy_file(workspace_dir_path, source_dir_path, destination_dir_path, relativ
 
     print 'Copied %s to %s' % (source_file_path, tmp_file_path)
 
-    safe_move_with_workspace(tmp_file_path, workspace_dir_path, destination_dir_path, relative_file_path)
+    safe_move_with_workspace(tmp_file_path, workspace_dir_path, destination_dir_path, relative_file_path, file_permissions)
 
 
-def move_file(workspace_dir_path, source_dir_path, destination_dir_path, relative_file_path):
+def move_file(workspace_dir_path, source_dir_path, destination_dir_path, relative_file_path, file_permissions):
     source_file_path = path.join(source_dir_path, relative_file_path)
 
-    safe_move_with_workspace(source_file_path, workspace_dir_path, destination_dir_path, relative_file_path)
+    safe_move_with_workspace(source_file_path, workspace_dir_path, destination_dir_path, relative_file_path, file_permissions)
 
 
-def safe_move_with_workspace(source_file_path, workspace_dir_path, destination_dir_path, relative_file_path):
+def safe_move_with_workspace(source_file_path, workspace_dir_path, destination_dir_path, relative_file_path, file_permissions):
     destination_file_path = path.join(destination_dir_path, relative_file_path)
     workspace_file_path = path.join(workspace_dir_path, relative_file_path)
 
     # 1. Create destination dirs in workspace
     workspace_dirname = path.dirname(workspace_file_path)
     if not path.exists(workspace_dirname):
-        makedirs(workspace_dirname)
+        makedirs(workspace_dirname, 0777)
 
 
     # 2. Move file to workspace destination
@@ -112,7 +121,12 @@ def safe_move_with_workspace(source_file_path, workspace_dir_path, destination_d
         move(source_file_path, workspace_file_path)
 
 
-    # 3. Calculate which destination dirs don't exists and move from workspace
+    # 3. Set file permissions (if specified)
+    if file_permissions:
+        chmod(workspace_file_path, file_permissions)
+
+
+    # 4. Calculate which destination dirs don't exists and move from workspace
     workspace_dir_to_remove = ''
     relative_dir_path = path.dirname(relative_file_path)
     if path.exists(path.join(destination_dir_path, relative_dir_path)):
@@ -128,7 +142,7 @@ def safe_move_with_workspace(source_file_path, workspace_dir_path, destination_d
         workspace_dir_to_remove = path.dirname(dir_to_move)
 
 
-    # 4. Delete remaining dirs created in workspace
+    # 5. Delete remaining dirs created in workspace
     if workspace_dir_to_remove:
         recursive_remove_empty_directories(workspace_dir_path,
             path.join(workspace_dir_path, workspace_dir_to_remove))
@@ -183,7 +197,7 @@ def get_file_list(source_path, restrict_to_file_extensions, is_include_hidden_pa
 
             if restrict_to_file_extensions != None and len(restrict_to_file_extensions) > 0:
                 f, ext = path.splitext(filename)
-                if ext not in restrict_to_file_extensions:
+                if ext.upper() not in restrict_to_file_extensions:
                     continue
 
             # Make sure the source_path has an ending slash
@@ -236,7 +250,7 @@ def update_journal(journal_file_path, journal_entries):
     if not path.exists(journal_file_path):
         dirname = path.dirname(journal_file_path)
         if not path.exists(dirname):
-            makedirs(dirname)
+            makedirs(dirname, 0777)
 
     tmp_file_path = None
     with NamedTemporaryFile(delete=False) as tmpfile:
@@ -268,6 +282,7 @@ def sync_files(args):
     restrict_to_file_extensions = args.include_extensions.split(',') if args.include_extensions else []
     is_move_file = args.move
     is_purge_empty_destination_dirs = args.purge_empty_destination_dirs
+    file_permissions = args.set_permissions
     is_include_hidden_paths = args.include_hidden_paths
     source_dir_path = args.source_dir
     destination_dir_path = args.destination_dir
@@ -276,7 +291,7 @@ def sync_files(args):
         cleaned_extensions = []
         for ext in restrict_to_file_extensions:
             if ext and ext.strip() and ext.strip()[1] is not '.':
-                cleaned_extensions.append('.' + ext.strip())
+                cleaned_extensions.append('.' + ext.strip().upper())
             else:
                 cleaned_extensions.append(ext.strip())
 
@@ -328,7 +343,7 @@ def sync_files(args):
 
             try:
                 workspace_file_path = path.join(workspace_dir_path, workspace_relative_filename)
-                safe_move_with_workspace(workspace_file_path, workspace_dir_path, destination_dir_path, workspace_relative_filename)
+                safe_move_with_workspace(workspace_file_path, workspace_dir_path, destination_dir_path, workspace_relative_filename, file_permissions)
             except Exception as e:
                 error('Error syncing previous workspace file: %s, %s' % (workspace_file_path, e))
                 raise
@@ -360,9 +375,9 @@ def sync_files(args):
 
             try:
                 if is_move_file:
-                    move_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename)
+                    move_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename, file_permissions)
                 else:
-                    copy_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename)
+                    copy_file(workspace_dir_path, source_dir_path, destination_dir_path, new_relative_filename, file_permissions)
             except Exception as e:
                 error('Error syncing file:' + str(path.join(source_dir_path, new_relative_filename)) +
                     ", " + str(e))
@@ -548,6 +563,9 @@ class ConditionalDirLock(FileLock):
             try:
                 FileLock.acquire(self)
             except:
+                if not path.exists(self.lockfile):
+                    raise
+
                 with open(self.lockfile, 'r') as lf:
                     pid = -1
                     try:
