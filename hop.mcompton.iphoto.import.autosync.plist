@@ -3,42 +3,38 @@
 <plist version="1.0">
   <dict>
   <key>Label</key>
-  <string>hop.mcompton.iphoto.import.autosync</string>
+  <string>hop.mcompton.photostream.export.autosync</string>
 
   <key>ProgramArguments</key>
   <array>
     <string>/opt/bin/autoFileSync.py</string>
-    <string>--copy</string>
+    <string>--move</string>
     <string>--include-extensions</string><string>jpeg,jpg,png</string>
-    <string>--lock-destination-dir</string>
+    <string>--lock-source-dir</string>
     <string>--purge-empty-destination-dirs</string>
-    <string>--set-permissions</string><string>0666</string>
     <string>--sync-count</string><string>5</string>
     <string>--sync-interval</string><string>5</string>
-    <string>--workspace-dir</string><string>/Users/Shared/Pictures/fromAcompton/.acompton.workspace</string>
+    <string>--workspace-dir</string><string>/Users/Shared/Pictures/fromAcompton/.mcompton.workspace</string>
 
     <string>--verbose</string>
 
-    <string>/Users/acompton/Library/Application Support/iLifeAssetManagement/assets/sub</string>
     <string>/Users/Shared/Pictures/fromAcompton</string>
+    <string>/Users/mcompton/Pictures/iPhoto Library.photolibrary/Auto Import</string>
   </array>
 
   <key>ProcessType</key>
   <string>Background</string>
 
-  <key>Umask</key>
-  <integer>0</integer>
-
   <key>WatchPaths</key>
   <array>
-    <string>/Users/acompton/Library/Application Support/iLifeAssetManagement/assets/sub</string>
+    <string>/Users/Shared/Pictures/fromAcompton</string>
   </array>
 
   <key>StandardOutPath</key>
-  <string>/opt/bin/log/acompton.export.log</string>
+  <string>/opt/bin/log/mcompton.import.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/opt/bin/log/acompton.export.log</string>
+  <string>/opt/bin/log/mcompton.import.log</string>
 
   <key>Debug</key>
   <true/>
